@@ -1,6 +1,6 @@
 {
-  "name": "react-component-library",
-  "version": "1.0.0",
+  "name": "react-offline-iframe",
+  "version": "0.0.1",
   "main": "build/index.js",
   "module": "build/index.esm.js",
   "files": [
@@ -19,7 +19,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HarveyD/react-component-library.git"
+    "url": "git+https://github.com/elias-sundqvist/react-offline-iframe"
   },
   "keywords": [
     "React",
@@ -30,12 +30,12 @@
     "Sass",
     "Storybook"
   ],
-  "author": "Harvey Delaney",
+  "author": "Elias Sundqvist",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/HarveyD/react-component-library/issues"
+    "url": "https://github.com/elias-sundqvist/react-offline-iframe/issues"
   },
-  "homepage": "https://github.com/HarveyD/react-component-library#readme",
+  "homepage": "https://github.com/elias-sundqvist/react-offline-iframe#readme",
   "peerDependencies": {
     "react": ">=16.8.0",
     "react-dom": ">=16.8.0"
@@ -54,7 +54,9 @@
     "babel-preset-react-app": "^10.0.0",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^26.6.3",
+    "minify": "^8.0.3",
     "node-sass": "^5.0.0",
+    "raw-loader": "^4.0.2",
     "react": "^16.14.0",
     "react-dom": "^16.14.0",
     "rollup": "^2.56.3",
@@ -65,5 +67,9 @@
     "sass-loader": "^10.2.0",
     "ts-jest": "^26.5.6",
     "typescript": "^4.4.2"
+  },
+  "dependencies": {
+    "jszip": "^3.7.1",
+    "mock-websocket": "^0.0.7"
   }
 }

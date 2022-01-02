@@ -1,3 +1,3 @@
-import TestComponent from "./TestComponent";
+import OfflineIframe from "./OfflineIframe";
 
-export { TestComponent };
+export { OfflineIframe };
