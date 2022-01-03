@@ -10,4 +10,5 @@ export type LocalIFrameProps = {
         base: (href: string) => Promise<Response>;
     }) => Promise<Response>;
     htmlPostProcessFunction?: (html: string) => string;
+    outerIframeProps?:any
 };
