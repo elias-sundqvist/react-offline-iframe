@@ -1,16 +1,35 @@
-import React from "react";
-import defineLocalIframe from "./defineLocalIframe";
-import { mkUrl } from "./utils";
+import React from 'react';
+import defineLocalIframe from './defineLocalIframe';
+import { mkUrl } from './utils';
 
-const OfflineIframe = ({ address, fetchUrlContent, getResourceUrl, proxy, ...props }) => {
-  const LocalIframe = defineLocalIframe({fetchUrlContent, getResourceUrl});
-  return <div>
-    <LocalIframe onload={async ()=>{}} src={address} proxy={proxy} fetchProxy={async ({href, base, contextUrl})=>
-      {
-        href = proxy(mkUrl(contextUrl, href)).href;
-        return await base(href);
-    }} onIframePatch={async ()=>{}} {...props} />
-    </div>
+type fetchType = typeof fetch;
+
+const OfflineIframe = ({
+    address,
+    fetch,
+    getUrl,
+    ...props
+}: {
+    address: string;
+    fetch: fetchType;
+    getUrl: (originalUrl: string) => string;
+}) => {
+    const LocalIframe = defineLocalIframe({ fetchUrlContent: fetch, getUrl });
+    return (
+        <div>
+            <LocalIframe
+                onload={async () => {}}
+                src={address}
+                proxy={getUrl}
+                fetchProxy={async ({ href, base, contextUrl }) => {
+                    href = getUrl(mkUrl(contextUrl, href).href);
+                    return await base(href);
+                }}
+                onIframePatch={async () => {}}
+                {...props}
+            />
+        </div>
+    );
 };
 
 export default OfflineIframe;

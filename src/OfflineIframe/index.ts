@@ -1,1 +1,1 @@
-export { default } from "./OfflineIframe";
+export {default} from './OfflineIframe';

@@ -1,3 +1,3 @@
-import OfflineIframe from "./OfflineIframe";
+import OfflineIframe from './OfflineIframe';
 
-export { OfflineIframe };
+export {OfflineIframe};

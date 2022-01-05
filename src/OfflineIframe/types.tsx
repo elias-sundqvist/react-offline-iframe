@@ -2,7 +2,7 @@ export type LocalIFrameProps = {
     onIframePatch: (iframe: HTMLIFrameElement) => Promise<void>;
     onload: (iframe: HTMLIFrameElement) => Promise<void>;
     src: string;
-    proxy: (url: URL) => URL;
+    proxy: (url: string) => string;
     fetchProxy: (args: {
         href: string;
         init?: RequestInit;
@@ -10,5 +10,5 @@ export type LocalIFrameProps = {
         base: (href: string) => Promise<Response>;
     }) => Promise<Response>;
     htmlPostProcessFunction?: (html: string) => string;
-    outerIframeProps?:any
+    outerIframeProps?: any;
 };

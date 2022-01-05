@@ -84,7 +84,7 @@ export default function createXMLHttpRequest() {
                 case 'error':
                     return (this.onerror = f);
                 default:
-                //console.warn("No handler for event", {ev, f})
+                // console.warn("No handler for event", {ev, f})
             }
         },
 
