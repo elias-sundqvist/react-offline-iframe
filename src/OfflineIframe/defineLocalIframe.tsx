@@ -5,7 +5,8 @@ import { WebSocket, Server } from 'mock-websocket';
 import { LocalIFrameProps } from './types';
 import { mkUrl } from './utils';
 
-export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResourceUrl }) => (props: LocalIFrameProps) => {
+export default ({ fetchUrlContent, getUrl }: { fetchUrlContent; getUrl }) =>
+    (props: LocalIFrameProps) => {
         let mockServer = new Server('wss://hypothes.is/ws', { mockGlobal: false });
         mockServer.on('connection', () => '');
         mockServer.on('message', () => {
@@ -14,6 +15,11 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
         const frame = useRef<HTMLIFrameElement>(null);
         const patchedElements = new WeakSet();
         const patchedElementSrcDocs = new WeakMap();
+
+        function getResourceUrl(url: URL, contextUrl) {
+            const fullUrl = mkUrl(contextUrl, url);
+            return getUrl(fullUrl);
+        }
 
         function addLocalUrlSetter(property, elem, context) {
             const { get, set } = findDescriptor(elem, property);
@@ -27,7 +33,7 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
                 },
 
                 set(v) {
-                    //modify value before applying it to the default setter
+                    // modify value before applying it to the default setter
                     set.call(this, getResourceUrl(v, context));
                     elem.setAttribute(`patched-${property}`, v);
                 }
@@ -45,7 +51,10 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
             await patchXmlLinkTags(xmlDoc, contextUrl);
             patchXmlScriptTags(xmlDoc, contextUrl);
             patchXmlIframeTags(xmlDoc);
-            return { html: `<!DOCTYPE html>${xmlDoc.documentElement.outerHTML}`, context: contextUrl.href||contextUrl };
+            return {
+                html: `<!DOCTYPE html>${xmlDoc.documentElement.outerHTML}`,
+                context: contextUrl.href || contextUrl
+            };
         }
 
         function patchCssUrls(cssCode, contextUrl) {
@@ -139,7 +148,7 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
         }
 
         function proxySrc(src) {
-            const url = new URL(src);
+            const url = new URL(src).href;
             return props.proxy(url);
         }
 
@@ -223,14 +232,14 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
         function patchIframeWebSocket(iframe) {
             iframe.contentWindow.WebSocket = WebSocket;
         }
-        
-        function makePatchedWorker(contextUrl){
+
+        function makePatchedWorker(contextUrl) {
             return class PatchedWorker extends Worker {
-                constructor(scriptURL: string | URL, options?: WorkerOptions){
+                constructor(scriptURL: string | URL, options?: WorkerOptions) {
                     const url = getResourceUrl(scriptURL, contextUrl);
                     super(url, options);
                 }
-            }
+            };
         }
 
         function patchIframeWorker(iframe, contextUrl) {
@@ -290,9 +299,9 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
                     src = tryGetIframeContext(iframe);
                     content = iframe.getAttribute('srcDoc');
                     patchedElementSrcDocs.set(iframe, content);
-                    //iframe.removeAttribute('srcDoc');
+                    // iframe.removeAttribute('srcDoc');
                 }
-                let { html, context } = await patchHtmlCode(content, src);
+                const { html, context } = await patchHtmlCode(content, src);
 
                 patchIframeCreateEl(iframe, context);
                 patchIframeClasses(iframe);
@@ -404,7 +413,7 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
                 props.onload(iframe.contentDocument.body.firstChild as HTMLIFrameElement);
             }
             return () => {
-                //frame.current?.remove();
+                // frame.current?.remove();
             };
         }, [frame]);
 
@@ -414,7 +423,7 @@ export default ({ fetchUrlContent, getResourceUrl }: { fetchUrlContent, getResou
                 mockServer.close();
                 mockServer = null;
                 frame.current?.contentWindow?.location?.reload?.();
-                //frame.current?.remove?.();
+                // frame.current?.remove?.();
             };
         }, []);
 
