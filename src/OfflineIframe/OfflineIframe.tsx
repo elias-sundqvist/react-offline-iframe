@@ -15,7 +15,7 @@ const OfflineIframe = ({
     fetch: fetchType;
     getUrl: (originalUrl: string) => string;
 } & Partial<LocalIFrameProps>) => {
-    const LocalIframe = defineLocalIframe({ fetchUrlContent: fetch, getUrl });
+    const LocalIframe = defineLocalIframe({ fetch, getUrl });
     return (
         <div>
             <LocalIframe

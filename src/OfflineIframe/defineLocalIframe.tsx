@@ -5,8 +5,9 @@ import { WebSocket, Server } from 'mock-websocket';
 import { LocalIFrameProps } from './types';
 import { mkUrl } from './utils';
 
-export default ({ fetchUrlContent, getUrl }: { fetchUrlContent; getUrl }) =>
+export default ({ fetch, getUrl }: { fetch; getUrl }) =>
     (props: LocalIFrameProps) => {
+        const fetchUrlContent = (url:URL)=>fetch(url.toString());
         let mockServer = new Server('wss://hypothes.is/ws', { mockGlobal: false });
         mockServer.on('connection', () => '');
         mockServer.on('message', () => {
