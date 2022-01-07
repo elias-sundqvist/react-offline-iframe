@@ -7,7 +7,7 @@ export type LocalIFrameProps = {
         href: string;
         init?: RequestInit;
         contextUrl: string;
-        base: (href: string) => Promise<Response>;
+        base: (href: string, init?: RequestInit) => Promise<Response>;
     }) => Promise<Response>;
     htmlPostProcessFunction?: (html: string) => string;
     outerIframeProps?: any;

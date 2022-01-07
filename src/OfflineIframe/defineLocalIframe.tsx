@@ -7,7 +7,7 @@ import { mkUrl } from './utils';
 
 export default ({ fetch, getUrl }: { fetch; getUrl }) =>
     (props: LocalIFrameProps) => {
-        const fetchUrlContent = (url:URL)=>fetch(url.toString());
+        const fetchUrlContent = (url: URL, init?: RequestInit) => fetch(url.toString(), init);
         let mockServer = new Server('wss://hypothes.is/ws', { mockGlobal: false });
         mockServer.on('connection', () => '');
         mockServer.on('message', () => {
@@ -180,7 +180,7 @@ export default ({ fetch, getUrl }: { fetch; getUrl }) =>
         }
 
         function patchIframeFetch(iframe, contextUrl) {
-            const base = href => fetchUrlContent(mkUrl(contextUrl, href));
+            const base = (href, init?: RequestInit) => fetchUrlContent(mkUrl(contextUrl, href), init);
             if (props.fetchProxy) {
                 iframe.contentWindow.fetch = (href, init) => props.fetchProxy({ href, init, contextUrl, base });
                 return;

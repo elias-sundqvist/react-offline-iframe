@@ -22,9 +22,9 @@ const OfflineIframe = ({
                 onload={async () => {}}
                 src={address}
                 proxy={getUrl}
-                fetchProxy={async ({ href, base, contextUrl }) => {
+                fetchProxy={async ({ href, base, contextUrl, init }) => {
                     href = getUrl(mkUrl(contextUrl, href).href);
-                    return await base(href);
+                    return await base(href, init);
                 }}
                 onIframePatch={async () => {}}
                 {...props}
