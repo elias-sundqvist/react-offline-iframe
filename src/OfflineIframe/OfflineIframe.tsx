@@ -1,6 +1,7 @@
 import React from 'react';
 import defineLocalIframe from './defineLocalIframe';
 import { mkUrl } from './utils';
+import { LocalIFrameProps } from './types';
 
 type fetchType = typeof fetch;
 
@@ -13,7 +14,7 @@ const OfflineIframe = ({
     address: string;
     fetch: fetchType;
     getUrl: (originalUrl: string) => string;
-}) => {
+} & LocalIFrameProps) => {
     const LocalIframe = defineLocalIframe({ fetchUrlContent: fetch, getUrl });
     return (
         <div>

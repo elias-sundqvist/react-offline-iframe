@@ -84,12 +84,6 @@ const makeGetResourceUrl = resourceUrls => (url: string) => {
     }
     return proxiedUrl.toString();
 };
-
-const makeProxy = () => x => {
-    console.log('Proxying ', x);
-    return x;
-};
-
 export const Desmos = () => {
     const [folder, setFolder] = useState<jszip>();
     const [resourceUrls, setResourceUrls] = useState<Map<string, string>>();
