@@ -9,7 +9,6 @@ export default {
 };
 
 function proxySrc(src) {
-    console.log('proxySrc', src);
     const url = new URL(src);
     return url;
 }
@@ -18,7 +17,7 @@ const makeOnChange = (setFolder, setResourceUrls) => async x => {
     const folder = await jszip.loadAsync(x.target.files[0]);
     setFolder(folder);
     const urls = new Map<string, string>();
-    console.log('Loading Resource URLs');
+    //console.log('Loading Resource URLs');
     for (const filePath of Object.keys(folder.files)) {
         const file = folder.file(filePath);
         if (!file || file.dir) continue;
@@ -27,7 +26,7 @@ const makeOnChange = (setFolder, setResourceUrls) => async x => {
         urls.set(filePath, URL.createObjectURL(blob));
     }
     setResourceUrls(urls);
-    console.log('Finished Setting Resource URLs');
+    //console.log('Finished Setting Resource URLs');
 };
 
 const proxiedHosts = new Set([
@@ -41,12 +40,10 @@ const proxiedHosts = new Set([
 
 const makeFetchUrlContent = folder => async url => {
     const urlBefore = url;
-    console.log('a');
     url = proxySrc(url);
     const urlAfter: URL = url;
     let buf;
 
-    console.log({ host: urlAfter.host });
     if (proxiedHosts.has(urlAfter.host)) {
         try {
             const pathName = `${urlAfter.host}${urlAfter.pathname}`.replace(/^\//, '');
@@ -79,7 +76,6 @@ const makeGetResourceUrl = resourceUrls => (url: string) => {
         const res =
             resourceUrls.get(pathName) || resourceUrls.get(`${pathName}.html`) || resourceUrls.get(`${pathName}.json`);
         if (res) return res;
-        debugger;
         console.error('file not found', { url, pathName });
     }
     return proxiedUrl.toString();

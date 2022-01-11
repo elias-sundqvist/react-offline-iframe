@@ -16,9 +16,7 @@ const OfflineIframe = ({
     getUrl: (originalUrl: string) => string;
 } & Partial<LocalIFrameProps>) => {
     const LocalIframe = defineLocalIframe({ fetch, getUrl });
-    return (
-        <div>
-            <LocalIframe
+    return <LocalIframe
                 onload={async () => {}}
                 src={address}
                 proxy={getUrl}
@@ -28,9 +26,7 @@ const OfflineIframe = ({
                 }}
                 onIframePatch={async () => {}}
                 {...props}
-            />
-        </div>
-    );
+            />;
 };
 
 export default OfflineIframe;
