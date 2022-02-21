@@ -4,12 +4,19 @@ import { useRef } from 'react';
 import { WebSocket, Server } from 'mock-websocket';
 import { LocalIFrameProps } from './types';
 import { mkUrl } from './utils';
+import { TypeofTypeAnnotation } from '@babel/types';
 
 type FetchType = typeof fetch;
 
 export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
     (props: LocalIFrameProps) => {
         const fetchUrlContent = (url: URL, init?: RequestInit) => fetch(url.toString(), init);
+        let mockServers = [];
+        props.webSocketSetup(url => {
+            let mockServer = new Server(url, { mockGlobal: false });
+            mockServers.push(mockServer);
+            return mockServer;
+        });
         let mockServer = new Server('wss://hypothes.is/ws', { mockGlobal: false });
         mockServer.on('connection', () => '');
         mockServer.on('message', () => {
@@ -19,12 +26,12 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
         const patchedElements = new WeakSet();
         const patchedElementSrcDocs = new WeakMap();
 
-        function getResourceUrl(url: URL, contextUrl) {
+        function getResourceUrl(url: URL | string, contextUrl) {
             const fullUrl = mkUrl(contextUrl, url);
             return getUrl(fullUrl);
         }
 
-        function addLocalUrlSetter(property, elem, context) {
+        function addLocalUrlSetter(property: string, elem: HTMLElement, context) {
             const { get, set } = findDescriptor(elem, property);
             Object.defineProperty(elem, property, {
                 configurable: true,
@@ -41,6 +48,57 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                     elem.setAttribute(`patched-${property}`, v);
                 }
             });
+            type TSetAttribute = typeof elem.setAttribute;
+            const setAttribute: TSetAttribute = elem.setAttribute.bind(elem);
+            elem.setAttribute = (qualifiedName, value) => {
+                if (qualifiedName.toLowerCase() == property.toLowerCase()) {
+                    setAttribute(qualifiedName, getResourceUrl(value, context));
+                    setAttribute(`patched-${qualifiedName}`, value);
+                } else {
+                    setAttribute(qualifiedName, value);
+                }
+            };
+
+            type TSetAttributeNS = typeof elem.setAttributeNS;
+            const setAttributeNS: TSetAttributeNS = elem.setAttributeNS.bind(elem);
+            elem.setAttributeNS = (namespace, qualifiedName, value) => {
+                if (qualifiedName.toLowerCase() == property.toLowerCase()) {
+                    setAttributeNS(namespace, qualifiedName, getResourceUrl(value, context));
+                    setAttributeNS(namespace, `patched-${qualifiedName}`, value);
+                } else {
+                    setAttributeNS(namespace, qualifiedName, value);
+                }
+            };
+
+            type TSetAttributeNode = typeof elem.setAttributeNode;
+            const setAttributeNode: TSetAttributeNode = elem.setAttributeNode.bind(elem);
+            elem.setAttributeNode = attr => {
+                if (attr.name.toLowerCase() == property.toLowerCase()) {
+                    const patchedAttr = elem.ownerDocument.createAttribute(`patched-${attr.name}`);
+                    patchedAttr.value = attr.value;
+                    const newAttr = elem.ownerDocument.createAttribute(attr.name);
+                    newAttr.value = getResourceUrl(attr.value, context);
+                    setAttributeNode(patchedAttr);
+                    return setAttributeNode(newAttr);
+                } else {
+                    return setAttributeNode(attr);
+                }
+            };
+
+            type TSetAttributeNodeNS = typeof elem.setAttributeNode;
+            const setAttributeNodeNS: TSetAttributeNodeNS = elem.setAttributeNodeNS.bind(elem);
+            elem.setAttributeNodeNS = attr => {
+                if (attr.name.toLowerCase() == property.toLowerCase()) {
+                    const patchedAttr = elem.ownerDocument.createAttributeNS(attr.namespaceURI, `patched-${attr.name}`);
+                    patchedAttr.value = attr.value;
+                    const newAttr = elem.ownerDocument.createAttributeNS(attr.namespaceURI, attr.name);
+                    newAttr.value = getResourceUrl(attr.value, context);
+                    setAttributeNodeNS(patchedAttr);
+                    return setAttributeNodeNS(newAttr);
+                } else {
+                    return setAttributeNodeNS(attr);
+                }
+            };
         }
 
         async function patchHtmlCode(htmlCode, contextUrl) {
@@ -106,12 +164,29 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             const rel = tag.getAttribute('rel');
             switch (rel) {
                 case 'stylesheet':
+                    {
+                        const href = tag.getAttribute('href');
+                        const hrefContext = mkUrl(contextUrl, href);
+                        try {
+                            const data = await (
+                                await fetchUrlContent(hrefContext, {
+                                    headers: {
+                                        Accept: `text/css,*/*;q=0.1`,
+                                        'Accept-Encoding': 'gzip, deflate, br'
+                                    }
+                                })
+                            ).text();
+                            tag.outerHTML = `<style>${patchCssUrls(data, hrefContext)}</style>`;
+                        } catch {}
+                    }
+                    break;
+                default: {
                     const href = tag.getAttribute('href');
-                    const hrefContext = mkUrl(contextUrl, href);
-                    try {
-                        const data = await (await fetchUrlContent(hrefContext)).text();
-                        tag.outerHTML = `<style>${patchCssUrls(data, hrefContext)}</style>`;
-                    } catch {}
+                    if (href) {
+                        tag.setAttribute('href', getResourceUrl(href, contextUrl));
+                        tag.setAttribute('patched-href', href);
+                    }
+                }
             }
         }
 
@@ -209,7 +284,7 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             const createFrameElemNS = frameDoc.createElementNS.bind(frameDoc);
 
             const patchElem = (tagName: string, elem: HTMLElement) => {
-                switch (tagName) {
+                switch (tagName.toLowerCase()) {
                     case 'img':
                     case 'script':
                         addLocalUrlSetter('src', elem, context);
@@ -236,20 +311,19 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             iframe.contentWindow.WebSocket = WebSocket;
         }
 
-        function makeWorkerFromString(str){
-            return new Worker('data:application/javascript,' +
-            encodeURIComponent(str) );
+        function makeWorkerFromString(str) {
+            return new Worker('data:application/javascript,' + encodeURIComponent(str));
         }
 
         function makePatchedWorker(iframe, contextUrl) {
             return class PatchedWorker extends Worker {
                 constructor(scriptURL: URL, options?: WorkerOptions) {
                     const url = getResourceUrl(scriptURL, contextUrl);
-                    const patchedWorkerPromise = (async ()=>{
+                    const patchedWorkerPromise = (async () => {
                         const response = await fetch(url);
                         const code = await response.text();
                         let worker = makeWorkerFromString(
-`
+                            `
 fetchCallbacks = {};
 fetch=async (resource, init)=>{
     const id = \`\${Math.random()}\`.substr(2);
@@ -263,47 +337,59 @@ self.addEventListener("message", function(event) {
         fetchCallbacks[event.data.id] = null;
     }
 });
-${code}`);
-                        worker.addEventListener("message", async function(event) {
-                            if(event.data.isFetch) {
-                                const response = await (iframe.contentWindow.fetch as FetchType)(event.data.resource, event.data.init);
+${code}`
+                        );
+                        worker.addEventListener('message', async function (event) {
+                            if (event.data.isFetch) {
+                                const response = await (iframe.contentWindow.fetch as FetchType)(
+                                    event.data.resource,
+                                    event.data.init
+                                );
                                 const blob = await response.blob();
-                                worker.postMessage({isFetchResult:true, id: event.data.id, blob, init:{status:response.status, statusText:response.statusText, headers: response.headers}});
+                                worker.postMessage({
+                                    isFetchResult: true,
+                                    id: event.data.id,
+                                    blob,
+                                    init: {
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        headers: response.headers
+                                    }
+                                });
                             }
                         });
                         return worker;
                     })();
                     super(url, options);
-                    return new Proxy(this,{
+                    return new Proxy(this, {
                         get(target, propKey, receiver) {
                             var propValue = target[propKey];
-                            if (typeof propValue != "function"){
+                            if (typeof propValue != 'function') {
                                 return propValue;
-                            }
-                            else{
+                            } else {
                                 return async function (...args) {
                                     let patchedWorker = await patchedWorkerPromise;
                                     return patchedWorker[propKey](...args);
                                 };
                             }
                         }
-                    })
+                    });
                 }
             };
         }
 
         function patchIframeWorker(iframe, contextUrl) {
-            iframe.contentWindow.Worker = makePatchedWorker(iframe,contextUrl);
+            iframe.contentWindow.Worker = makePatchedWorker(iframe, contextUrl);
         }
 
         function patchIframeXMLHttpRequest(iframe, contextUrl) {
-            const base = href => {
-                return fetchUrlContent(mkUrl(contextUrl, href));
+            const base = (href, init?: RequestInit) => {
+                return fetchUrlContent(mkUrl(contextUrl, href), init);
             };
             let f = base;
             if (props.fetchProxy) {
-                f = href => {
-                    return props.fetchProxy({ href, contextUrl, base });
+                f = (href, init?: RequestInit) => {
+                    return props.fetchProxy({ href, init, contextUrl, base });
                 };
             }
             const FXHR = createXMLHttpRequest();
@@ -312,8 +398,11 @@ ${code}`);
                 url: /.*/,
                 status: 200,
                 statusText: 'OK',
-                response: async function (request, completeMatch) {
-                    const result = await f(completeMatch);
+                response: async function (request, url, data) {
+                    const result = await f(url, {
+                        method: request.method,
+                        ...(data?{body:data}:{})
+                    });
                     if (request.responseType == 'arraybuffer') {
                         return await result.arrayBuffer();
                     } else {
@@ -338,33 +427,61 @@ ${code}`);
             ) {
                 patchedElements.add(iframe);
                 let src = iframe.getAttribute('src') || iframe.getAttribute('patched-src');
-                let newSrc;
-                let content;
-                if (src) {
-                    iframe.setAttribute('patched-src', src);
-                    iframe.removeAttribute('src');
-                    newSrc = proxySrc(src);
-                    content = await (await fetchUrlContent(newSrc)).text();
-                } else {
-                    src = tryGetIframeContext(iframe);
-                    content = iframe.getAttribute('srcDoc');
-                    patchedElementSrcDocs.set(iframe, content);
-                    // iframe.removeAttribute('srcDoc');
-                }
-                const { html, context } = await patchHtmlCode(content, src);
+                await setIframeSrc(src);
+                async function setIframeSrc(src) {
+                    let newSrc;
+                    let content;
+                    if (src) {
+                        iframe.setAttribute('patched-src', src);
+                        iframe.removeAttribute('src');
+                        newSrc = proxySrc(src);
+                        content = await (
+                            await fetchUrlContent(newSrc, {
+                                headers: {
+                                    Accept: `text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8`,
+                                    'Accept-Encoding': `gzip, deflate, br`
+                                }
+                            })
+                        ).text();
+                    } else {
+                        src = tryGetIframeContext(iframe);
+                        content = iframe.getAttribute('srcDoc');
+                        patchedElementSrcDocs.set(iframe, content);
+                        // iframe.removeAttribute('srcDoc');
+                    }
+                    const { html, context } = await patchHtmlCode(content, src);
 
-                patchIframeCreateEl(iframe, context);
-                patchIframeClasses(iframe);
-                patchIframePostMessage(iframe);
-                patchIframeFetch(iframe, context);
-                patchIframeConsole(iframe);
-                patchIframeWorker(iframe, context);
-                patchIframeXMLHttpRequest(iframe, context);
-                patchIframeWebSocket(iframe);
-                setIframeContent(iframe, html);
-                addIframeMutationObserverWhenReady(iframe);
-                iframe.setAttribute('patched', 'true');
-                await props.onIframePatch(iframe);
+                    patchIframeCreateEl(iframe, context);
+                    patchIframeClasses(iframe);
+                    patchIframePostMessage(iframe);
+                    patchIframeFetch(iframe, context);
+                    patchIframeConsole(iframe);
+                    patchIframeWorker(iframe, context);
+                    patchIframeXMLHttpRequest(iframe, context);
+                    patchIframeWebSocket(iframe);
+                    setIframeContent(iframe, html);
+                    addIframeMutationObserverWhenReady(iframe);
+                    iframe.setAttribute('patched', 'true');
+                    await props.onIframePatch(iframe);
+                }
+
+                const oldSetAttribute = iframe.setAttribute.bind(iframe);
+                iframe.setAttribute = (qualifiedName, value) => {
+                    if (qualifiedName == 'src') {
+                        setIframeSrc(value);
+                    } else {
+                        oldSetAttribute(qualifiedName, value);
+                    }
+                };
+
+                const oldSetAttributeNS = iframe.setAttributeNS.bind(iframe);
+                iframe.setAttributeNS = (namespace, qualifiedName, value) => {
+                    if (qualifiedName == 'src') {
+                        setIframeSrc(value);
+                    } else {
+                        oldSetAttributeNS(namespace, qualifiedName, value);
+                    }
+                };
             }
         }
 
@@ -457,7 +574,7 @@ ${code}`);
             if (!frame.current) return;
             setIframeContentAndPatch(
                 iframe,
-                `<iframe patched-src="${props.src}" width="100%" height="100%" allowfullscreen="allowfullscreen" frameborder="0">`
+                `<style>body{margin:0px;}</style><iframe patched-src="${props.src}" width="100%" height="100%" allowfullscreen="allowfullscreen" frameborder="0">`
             );
             if (props.onload) {
                 props.onload(iframe.contentDocument.body.firstChild as HTMLIFrameElement);
@@ -469,13 +586,15 @@ ${code}`);
 
         useEffect(() => {
             return () => {
-                mockServer.stop();
-                mockServer.close();
-                mockServer = null;
+                mockServers.forEach(mockServer => {
+                    mockServer.stop();
+                    mockServer.close();
+                });
+                mockServers = [];
                 frame.current?.contentWindow?.location?.reload?.();
                 // frame.current?.remove?.();
             };
         }, []);
 
-        return <iframe ref={frame} width="100%" height="900px" allowFullScreen={true} {...props.outerIframeProps} />;
+        return <iframe ref={frame} width="100%" height="100%" allowFullScreen={true} {...props.outerIframeProps} />;
     };

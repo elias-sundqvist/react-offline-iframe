@@ -16,17 +16,19 @@ const OfflineIframe = ({
     getUrl: (originalUrl: string) => string;
 } & Partial<LocalIFrameProps>) => {
     const LocalIframe = defineLocalIframe({ fetch, getUrl });
-    return <LocalIframe
-                onload={async () => {}}
-                src={address}
-                proxy={getUrl}
-                fetchProxy={async ({ href, base, contextUrl, init }) => {
-                    href = getUrl(mkUrl(contextUrl, href).href);
-                    return await base(href, init);
-                }}
-                onIframePatch={async () => {}}
-                {...props}
-            />;
+    return (
+        <LocalIframe
+            onload={async () => {}}
+            src={address}
+            proxy={getUrl}
+            fetchProxy={async ({ href, base, contextUrl, init }) => {
+                href = getUrl(mkUrl(contextUrl, href).href);
+                return await base(href, init);
+            }}
+            onIframePatch={async () => {}}
+            {...props}
+        />
+    );
 };
 
 export default OfflineIframe;

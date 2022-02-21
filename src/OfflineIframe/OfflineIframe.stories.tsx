@@ -35,7 +35,8 @@ const proxiedHosts = new Set([
     'agentcooper.github.io',
     'cdn.hypothes.is',
     'via.hypothes.is',
-    'hypothes.is'
+    'hypothes.is',
+    'annotate.tv'
 ]);
 
 const makeFetchUrlContent = folder => async url => {
@@ -181,6 +182,34 @@ export const Hypothesis = () => {
                         return fetchUrlContent(url);
                     }}
                     getUrl={makeGetResourceUrl(resourceUrls)}
+                />
+            ) : (
+                <></>
+            )}
+        </div>
+    );
+};
+
+export const AnnotateTv = () => {
+    const [folder, setFolder] = useState<jszip>();
+    const [resourceUrls, setResourceUrls] = useState<Map<string, string>>();
+    const [address, setAddress] = useState<string>('https://annotate.tv/demo.html');
+    const fetchUrlContent = makeFetchUrlContent(folder);
+    return (
+        <div>
+            <input type="file" id="myFile" name="filename" onChange={makeOnChange(setFolder, setResourceUrls)} />
+            <br />
+            <input value={address} onChange={ev => setAddress(ev.target.value)} style={{ width: '100%' }} />
+            <br />
+            {resourceUrls ? (
+                <OfflineIframe
+                    address={address}
+                    fetch={url => {
+                        return fetchUrlContent(url);
+                    }}
+                    webSocketSetup={() => {}}
+                    getUrl={makeGetResourceUrl(resourceUrls)}
+                    outerIframeProps={{ style: { height: '900px' } }}
                 />
             ) : (
                 <></>
