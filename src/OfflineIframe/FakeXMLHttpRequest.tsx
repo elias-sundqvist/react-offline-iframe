@@ -78,14 +78,7 @@ export default function createXMLHttpRequest() {
         url: '',
 
         addEventListener: function (ev, f) {
-            switch (ev) {
-                case 'load':
-                    return (this.onload = f);
-                case 'error':
-                    return (this.onerror = f);
-                default:
-                // console.warn("No handler for event", {ev, f})
-            }
+            return this[`on${ev}`] = f;
         },
 
         open: function (method, url, async, user, password) {
@@ -128,7 +121,7 @@ export default function createXMLHttpRequest() {
                             // set response headers
                             let responseHeaders = null;
                             if (typeof item.headers === 'function') {
-                                responseHeaders = await item.headers.apply(null, args);
+                                responseHeaders = await item.headers.apply(null, [request, ...args]);
                             } else if (typeof item.headers === 'object') {
                                 responseHeaders = item.headers;
                             }
@@ -252,7 +245,7 @@ export default function createXMLHttpRequest() {
         },
 
         getAllResponseHeaders: function () {
-            return this.object.getAllResponseHeaders();
+            return Object.entries(this.responseHeaders).map(x=>x.join(": ")).join("\n");
         },
 
         overrideMimeType: function (mimeType) {

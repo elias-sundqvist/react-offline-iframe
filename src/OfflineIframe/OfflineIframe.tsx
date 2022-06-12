@@ -21,11 +21,20 @@ const OfflineIframe = ({
             onload={async () => {}}
             src={address}
             proxy={getUrl}
-            fetchProxy={async ({ href, base, contextUrl, init }) => {
-                href = getUrl(mkUrl(contextUrl, href).href);
-                return await base(href, init);
+            fetchProxy={async ({ requestInfo, base, contextUrl, init }) => {
+                requestInfo =
+                    typeof requestInfo == 'string'
+                        ? getUrl(mkUrl(contextUrl, requestInfo).href)
+                        : {
+                              ...requestInfo,
+                              url: getUrl(mkUrl(contextUrl, requestInfo.url).href)
+                          };
+                return await base(requestInfo, init);
             }}
             onIframePatch={async () => {}}
+            tagPatchStrategy={'prototype'}
+            postMessagePatchStrategy={'target'}
+            onMessagePatchStrategy={null}
             {...props}
         />
     );

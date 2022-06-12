@@ -13,6 +13,6 @@ export function isUrl(potentialUrl: string) {
     }
 }
 
-export function mkUrl(...args) {
+export function mkUrl(...args): URL {
     return args.reduce((a, b) => new URL(b, a));
 }

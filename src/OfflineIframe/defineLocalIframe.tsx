@@ -4,23 +4,17 @@ import { useRef } from 'react';
 import { WebSocket, Server } from 'mock-websocket';
 import { LocalIFrameProps } from './types';
 import { mkUrl } from './utils';
-import { TypeofTypeAnnotation } from '@babel/types';
 
 type FetchType = typeof fetch;
 
 export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
     (props: LocalIFrameProps) => {
-        const fetchUrlContent = (url: URL, init?: RequestInit) => fetch(url.toString(), init);
+        const fetchUrlContent = (url: RequestInfo, init?: RequestInit) => fetch(url, init);
         let mockServers = [];
-        props.webSocketSetup(url => {
-            let mockServer = new Server(url, { mockGlobal: false });
+        props.webSocketSetup?.(url => {
+            const mockServer = new Server(url, { mockGlobal: false });
             mockServers.push(mockServer);
             return mockServer;
-        });
-        let mockServer = new Server('wss://hypothes.is/ws', { mockGlobal: false });
-        mockServer.on('connection', () => '');
-        mockServer.on('message', () => {
-            mockServer.send(JSON.stringify({ type: 'whoyouare', userid: 'Obsidian User', ok: true, reply_to: 1 }));
         });
         const frame = useRef<HTMLIFrameElement>(null);
         const patchedElements = new WeakSet();
@@ -29,76 +23,6 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
         function getResourceUrl(url: URL | string, contextUrl) {
             const fullUrl = mkUrl(contextUrl, url);
             return getUrl(fullUrl);
-        }
-
-        function addLocalUrlSetter(property: string, elem: HTMLElement, context) {
-            const { get, set } = findDescriptor(elem, property);
-            Object.defineProperty(elem, property, {
-                configurable: true,
-                enumerable: true,
-
-                get() {
-                    const v = get.call(this);
-                    return v;
-                },
-
-                set(v) {
-                    // modify value before applying it to the default setter
-                    set.call(this, getResourceUrl(v, context));
-                    elem.setAttribute(`patched-${property}`, v);
-                }
-            });
-            type TSetAttribute = typeof elem.setAttribute;
-            const setAttribute: TSetAttribute = elem.setAttribute.bind(elem);
-            elem.setAttribute = (qualifiedName, value) => {
-                if (qualifiedName.toLowerCase() == property.toLowerCase()) {
-                    setAttribute(qualifiedName, getResourceUrl(value, context));
-                    setAttribute(`patched-${qualifiedName}`, value);
-                } else {
-                    setAttribute(qualifiedName, value);
-                }
-            };
-
-            type TSetAttributeNS = typeof elem.setAttributeNS;
-            const setAttributeNS: TSetAttributeNS = elem.setAttributeNS.bind(elem);
-            elem.setAttributeNS = (namespace, qualifiedName, value) => {
-                if (qualifiedName.toLowerCase() == property.toLowerCase()) {
-                    setAttributeNS(namespace, qualifiedName, getResourceUrl(value, context));
-                    setAttributeNS(namespace, `patched-${qualifiedName}`, value);
-                } else {
-                    setAttributeNS(namespace, qualifiedName, value);
-                }
-            };
-
-            type TSetAttributeNode = typeof elem.setAttributeNode;
-            const setAttributeNode: TSetAttributeNode = elem.setAttributeNode.bind(elem);
-            elem.setAttributeNode = attr => {
-                if (attr.name.toLowerCase() == property.toLowerCase()) {
-                    const patchedAttr = elem.ownerDocument.createAttribute(`patched-${attr.name}`);
-                    patchedAttr.value = attr.value;
-                    const newAttr = elem.ownerDocument.createAttribute(attr.name);
-                    newAttr.value = getResourceUrl(attr.value, context);
-                    setAttributeNode(patchedAttr);
-                    return setAttributeNode(newAttr);
-                } else {
-                    return setAttributeNode(attr);
-                }
-            };
-
-            type TSetAttributeNodeNS = typeof elem.setAttributeNode;
-            const setAttributeNodeNS: TSetAttributeNodeNS = elem.setAttributeNodeNS.bind(elem);
-            elem.setAttributeNodeNS = attr => {
-                if (attr.name.toLowerCase() == property.toLowerCase()) {
-                    const patchedAttr = elem.ownerDocument.createAttributeNS(attr.namespaceURI, `patched-${attr.name}`);
-                    patchedAttr.value = attr.value;
-                    const newAttr = elem.ownerDocument.createAttributeNS(attr.namespaceURI, attr.name);
-                    newAttr.value = getResourceUrl(attr.value, context);
-                    setAttributeNodeNS(patchedAttr);
-                    return setAttributeNodeNS(newAttr);
-                } else {
-                    return setAttributeNodeNS(attr);
-                }
-            };
         }
 
         async function patchHtmlCode(htmlCode, contextUrl) {
@@ -169,7 +93,7 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                         const hrefContext = mkUrl(contextUrl, href);
                         try {
                             const data = await (
-                                await fetchUrlContent(hrefContext, {
+                                await fetchUrlContent(hrefContext.href, {
                                     headers: {
                                         Accept: `text/css,*/*;q=0.1`,
                                         'Accept-Encoding': 'gzip, deflate, br'
@@ -217,14 +141,6 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             }
         }
 
-        function findDescriptor(obj, prop) {
-            if (obj != null) {
-                return Object.hasOwnProperty.call(obj, prop)
-                    ? Object.getOwnPropertyDescriptor(obj, prop)
-                    : findDescriptor(Object.getPrototypeOf(obj), prop);
-            }
-        }
-
         function proxySrc(src) {
             const url = new URL(src).href;
             return props.proxy(url);
@@ -248,6 +164,339 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             iframe.contentWindow.ArrayBuffer = ArrayBuffer;
         }
 
+        function patchIframeEventListeners(iframe: HTMLIFrameElement, context) {
+            if (!props.onMessagePatchStrategy) return;
+            if (typeof props.onMessagePatchStrategy == 'function') {
+                return props.onMessagePatchStrategy(iframe, context);
+            }
+            if (props.onMessagePatchStrategy == 'patchedOriginClone') {
+                type TWindow = typeof window;
+
+                const win = iframe.contentWindow as TWindow;
+
+                const prototype = win.EventTarget.prototype;
+
+                const messageMap = new WeakMap<
+                    EventListenerOrEventListenerObject,
+                    EventListenerOrEventListenerObject
+                >();
+
+                const _addEventListener = prototype.addEventListener;
+                prototype.addEventListener = function (
+                    type: string,
+                    callback: EventListenerOrEventListenerObject | null,
+                    options?: AddEventListenerOptions | boolean
+                ) {
+                    if (type == 'message') {
+                        const newCallback = (evt: MessageEvent) => {
+                            if (callback == null) return;
+                            let origin = evt.origin;
+                            try {
+                                origin = new URL(context).origin;
+                            } catch (e) {}
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            evt = new (evt.constructor as any)(
+                                evt.type,
+                                new Proxy(evt, {
+                                    get: (target, prop) => (prop == 'origin' ? origin : target[prop])
+                                })
+                            );
+
+                            if ('handleEvent' in callback) {
+                                return callback.handleEvent(evt);
+                            } else {
+                                return callback(evt);
+                            }
+                        };
+                        messageMap.set(callback, newCallback);
+                        return _addEventListener.apply(this, [type, newCallback, options]);
+                    } else {
+                        return _addEventListener.apply(this, [type, callback, options]);
+                    }
+                };
+
+                const _removeEventListener = prototype.removeEventListener;
+                prototype.removeEventListener = function (
+                    type: string,
+                    callback: EventListenerOrEventListenerObject,
+                    options?: boolean | EventListenerOptions
+                ) {
+                    if (type == 'message') {
+                        const newCallback = messageMap.get(callback);
+                        return _removeEventListener.apply(this, [type, newCallback, options]);
+                    } else {
+                        return _removeEventListener.apply(this, [type, callback, options]);
+                    }
+                };
+            }
+        }
+
+        function patchIframePostMessage(iframe: HTMLIFrameElement) {
+            if (!props.postMessagePatchStrategy) return;
+
+            type TWindow = typeof window;
+            if (!iframe.contentWindow) return;
+            const win = iframe.contentWindow as TWindow;
+
+            if (typeof props.postMessagePatchStrategy == 'function') {
+                return props.postMessagePatchStrategy(iframe);
+            }
+            if (props.postMessagePatchStrategy == 'target') {
+                // Evaluating this code from the context of the iframe window
+                // ensures that the Message event gets the correct source attribute.
+                return win.eval(`
+                    const _postMessage = window.postMessage;
+                    window.postMessage = function(message, targetOrigin, transfer) {
+                        return _postMessage.apply(this, [message, "*", transfer]);
+                    }
+                `);
+            }
+
+            if (props.postMessagePatchStrategy == 'top') {
+                const oldPostMessage = win.postMessage.bind(win);
+                win.postMessage = function myPostMessage(...args) {
+                    args[1] = '*';
+                    return oldPostMessage(...args);
+                };
+            }
+        }
+
+        function findDescriptor(obj, prop) {
+            if (obj != null) {
+                return Object.hasOwnProperty.call(obj, prop)
+                    ? Object.getOwnPropertyDescriptor(obj, prop)
+                    : findDescriptor(Object.getPrototypeOf(obj), prop);
+            }
+        }
+
+        function addLocalUrlSetter(property, elem, context) {
+            const { get, set } = findDescriptor(elem, property);
+            Object.defineProperty(elem, property, {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    const v = get.call(this);
+                    return v;
+                },
+                set(v) {
+                    // modify value before applying it to the default setter
+                    set.call(this, getResourceUrl(v, context));
+                    elem.setAttribute(`patched-${property}`, v);
+                }
+            });
+            const setAttribute = elem.setAttribute.bind(elem);
+            elem.setAttribute = (qualifiedName, value) => {
+                if (qualifiedName.toLowerCase() == property.toLowerCase()) {
+                    setAttribute(qualifiedName, getResourceUrl(value, context));
+                    setAttribute(`patched-${qualifiedName}`, value);
+                } else {
+                    setAttribute(qualifiedName, value);
+                }
+            };
+            const setAttributeNS = elem.setAttributeNS.bind(elem);
+            elem.setAttributeNS = (namespace, qualifiedName, value) => {
+                if (qualifiedName.toLowerCase() == property.toLowerCase()) {
+                    setAttributeNS(namespace, qualifiedName, getResourceUrl(value, context));
+                    setAttributeNS(namespace, `patched-${qualifiedName}`, value);
+                } else {
+                    setAttributeNS(namespace, qualifiedName, value);
+                }
+            };
+            const setAttributeNode = elem.setAttributeNode.bind(elem);
+            elem.setAttributeNode = attr => {
+                if (attr.name.toLowerCase() == property.toLowerCase()) {
+                    const patchedAttr = elem.ownerDocument.createAttribute(`patched-${attr.name}`);
+                    patchedAttr.value = attr.value;
+                    const newAttr = elem.ownerDocument.createAttribute(attr.name);
+                    newAttr.value = getResourceUrl(attr.value, context);
+                    setAttributeNode(patchedAttr);
+                    return setAttributeNode(newAttr);
+                } else {
+                    return setAttributeNode(attr);
+                }
+            };
+            const setAttributeNodeNS = elem.setAttributeNodeNS.bind(elem);
+            elem.setAttributeNodeNS = attr => {
+                if (attr.name.toLowerCase() == property.toLowerCase()) {
+                    const patchedAttr = elem.ownerDocument.createAttributeNS(attr.namespaceURI, `patched-${attr.name}`);
+                    patchedAttr.value = attr.value;
+                    const newAttr = elem.ownerDocument.createAttributeNS(attr.namespaceURI, attr.name);
+                    newAttr.value = getResourceUrl(attr.value, context);
+                    setAttributeNodeNS(patchedAttr);
+                    return setAttributeNodeNS(newAttr);
+                } else {
+                    return setAttributeNodeNS(attr);
+                }
+            };
+        }
+
+        function patchIframeTags(iframe: HTMLIFrameElement, context) {
+            type TWindow = typeof window;
+            type TDOMPrototype = typeof window.HTMLElement.prototype;
+
+            if (!props.tagPatchStrategy) return;
+            if (typeof props.tagPatchStrategy == 'function') {
+                return props.tagPatchStrategy(iframe, context);
+            }
+            if (props.tagPatchStrategy == 'createEl') {
+                if (!iframe.contentWindow) return;
+
+                const frameDoc = iframe.contentWindow.document;
+                const createFrameElem = frameDoc.createElement.bind(frameDoc);
+                const createFrameElemNS = frameDoc.createElementNS.bind(frameDoc);
+                const patchElem = (tagName, elem) => {
+                    switch (tagName.toLowerCase()) {
+                        case 'img':
+                        case 'script':
+                            addLocalUrlSetter('src', elem, context);
+                            break;
+                        case 'link':
+                            addLocalUrlSetter('href', elem, context);
+                            break;
+                    }
+                    return elem;
+                };
+                frameDoc.createElement = tagName => {
+                    const elem = createFrameElem(tagName);
+                    return patchElem(tagName, elem);
+                };
+                frameDoc.createElementNS = (nameSpace, tagName) => {
+                    const elem = createFrameElemNS(nameSpace, tagName);
+                    return patchElem(tagName, elem);
+                };
+            }
+
+            if (props.tagPatchStrategy == 'prototype') {
+                function patchProperties(prototype: TDOMPrototype, properties: Set<string>) {
+                    const GetAttributeOriginal = Symbol();
+                    prototype[GetAttributeOriginal] = prototype.getAttribute;
+                    prototype.getAttribute = function (qualifiedName) {
+                        if (properties.has(qualifiedName.toLowerCase())) {
+                            return (
+                                this[GetAttributeOriginal](`patched-${qualifiedName}`) ||
+                                this[GetAttributeOriginal](qualifiedName)
+                            );
+                        } else {
+                            return this[GetAttributeOriginal](qualifiedName);
+                        }
+                    };
+
+                    const GetAttributeNSOriginal = Symbol();
+                    prototype[GetAttributeNSOriginal] = prototype.getAttributeNS;
+                    prototype.getAttributeNS = function (qualifiedName, localName) {
+                        if (properties.has(qualifiedName.toLowerCase())) {
+                            return (
+                                this[GetAttributeNSOriginal](`patched-${qualifiedName}`, localName) ||
+                                this[GetAttributeNSOriginal](qualifiedName, localName)
+                            );
+                        } else {
+                            return this[GetAttributeNSOriginal](qualifiedName, localName);
+                        }
+                    };
+
+                    const GetAttributeNodeOriginal = Symbol();
+                    prototype[GetAttributeNodeOriginal] = prototype.getAttributeNode;
+                    prototype.getAttributeNode = function (qualifiedName) {
+                        if (properties.has(qualifiedName.toLowerCase())) {
+                            return (
+                                this[GetAttributeNodeOriginal](`patched-${qualifiedName}`) ||
+                                this[GetAttributeNodeOriginal](qualifiedName)
+                            );
+                        } else {
+                            return this[GetAttributeNodeOriginal](qualifiedName);
+                        }
+                    };
+
+                    const GetAttributeNodeNSOriginal = Symbol();
+                    prototype[GetAttributeNodeNSOriginal] = prototype.getAttributeNodeNS;
+                    prototype.getAttributeNodeNS = function (qualifiedName, localName) {
+                        if (properties.has(qualifiedName.toLowerCase())) {
+                            return (
+                                this[GetAttributeNodeNSOriginal](`patched-${qualifiedName}`, localName) ||
+                                this[GetAttributeNodeNSOriginal](qualifiedName, localName)
+                            );
+                        } else {
+                            return this[GetAttributeNodeNSOriginal](qualifiedName, localName);
+                        }
+                    };
+
+                    const SetAttributeOriginal = Symbol();
+                    prototype[SetAttributeOriginal] = prototype.setAttribute;
+                    prototype.setAttribute = function (qualifiedName, value) {
+                        if (properties.has(qualifiedName.toLowerCase())) {
+                            this[SetAttributeOriginal](qualifiedName, getResourceUrl(value, context));
+                            this[SetAttributeOriginal](`patched-${qualifiedName}`, value);
+                        } else {
+                            this[SetAttributeOriginal](qualifiedName, value);
+                        }
+                    };
+
+                    const SetAttributeNSOriginal = Symbol();
+                    prototype[SetAttributeNSOriginal] = prototype.setAttributeNS;
+                    prototype.setAttributeNS = function (namespace, qualifiedName, value) {
+                        if (properties.has(qualifiedName.toLowerCase())) {
+                            this[SetAttributeNSOriginal](namespace, qualifiedName, getResourceUrl(value, context));
+                            this[SetAttributeNSOriginal](namespace, `patched-${qualifiedName}`, value);
+                        } else {
+                            this[SetAttributeNSOriginal](namespace, qualifiedName, value);
+                        }
+                    };
+
+                    const SetAttributeNodeOriginal = Symbol();
+                    prototype[SetAttributeNodeOriginal] = prototype.setAttributeNode;
+                    prototype.setAttributeNode = function (attr) {
+                        if (properties.has(attr.name.toLowerCase())) {
+                            const patchedAttr = this.ownerDocument.createAttribute(`patched-${attr.name}`);
+                            patchedAttr.value = attr.value;
+                            const newAttr = this.ownerDocument.createAttribute(attr.name);
+                            newAttr.value = getResourceUrl(attr.value, context);
+                            this[SetAttributeNodeOriginal](patchedAttr);
+                            return this[SetAttributeNodeOriginal](newAttr);
+                        } else {
+                            return this[SetAttributeNodeOriginal](attr);
+                        }
+                    };
+
+                    const SetAttributeNodeNSOriginal = Symbol();
+                    prototype[SetAttributeNodeNSOriginal] = prototype.setAttributeNodeNS;
+                    prototype.setAttributeNodeNS = function (attr) {
+                        if (properties.has(attr.name.toLowerCase())) {
+                            const patchedAttr = this.ownerDocument.createAttributeNS(
+                                attr.namespaceURI,
+                                `patched-${attr.name}`
+                            );
+                            patchedAttr.value = attr.value;
+                            const newAttr = this.ownerDocument.createAttributeNS(attr.namespaceURI, attr.name);
+                            newAttr.value = getResourceUrl(attr.value, context);
+                            this[SetAttributeNodeNSOriginal](patchedAttr);
+                            return this[SetAttributeNodeNSOriginal](newAttr);
+                        } else {
+                            return this[SetAttributeNodeNSOriginal](attr);
+                        }
+                    };
+                    for (const property of properties) {
+                        Object.defineProperty(prototype, property, {
+                            configurable: true,
+                            enumerable: true,
+
+                            get() {
+                                return this.getAttribute(property);
+                            },
+
+                            set(v) {
+                                return this.setAttribute(property, v);
+                            }
+                        });
+                    }
+                }
+
+                const win = iframe.contentWindow as TWindow;
+                patchProperties(win.HTMLLinkElement.prototype, new Set(['href']));
+                patchProperties(win.HTMLScriptElement.prototype, new Set(['src']));
+                patchProperties(win.HTMLImageElement.prototype, new Set(['src']));
+            }
+        }
+
         function patchIframeDocumentQueries(iframe) {
             const framedoc = iframe.contentWindow.document;
             const querySelector = framedoc.querySelector.bind(framedoc);
@@ -256,55 +505,22 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             };
         }
 
-        function patchIframeFetch(iframe, contextUrl) {
-            const base = (href, init?: RequestInit) => fetchUrlContent(mkUrl(contextUrl, href), init);
+        function patchIframeFetch(iframe: HTMLIFrameElement, contextUrl) {
+            const base = (requestInfo: RequestInfo, init?: RequestInit) =>
+                fetchUrlContent(
+                    typeof requestInfo == 'string'
+                        ? mkUrl(contextUrl, requestInfo).href
+                        : { ...requestInfo, url: mkUrl(contextUrl, requestInfo.url).href },
+                    init
+                );
+
             if (props.fetchProxy) {
-                iframe.contentWindow.fetch = (href, init) => props.fetchProxy({ href, init, contextUrl, base });
+                iframe.contentWindow.fetch = (requestInfo, init) =>
+                    props.fetchProxy({ requestInfo, init, contextUrl, base });
                 return;
             }
             iframe.contentWindow.fetch = base;
             return;
-        }
-
-        function patchIframePostMessage(iframe) {
-            if (!iframe.contentWindow) return;
-            const window = iframe.contentWindow;
-            const oldPostMessage = window.postMessage.bind(window);
-            window.postMessage = function myPostMessage(...args) {
-                args[1] = '*';
-                return oldPostMessage(...args);
-            };
-        }
-
-        function patchIframeCreateEl(iframe, context) {
-            if (!iframe.contentWindow) return;
-
-            const frameDoc = iframe.contentWindow.document;
-            const createFrameElem = frameDoc.createElement.bind(frameDoc);
-            const createFrameElemNS = frameDoc.createElementNS.bind(frameDoc);
-
-            const patchElem = (tagName: string, elem: HTMLElement) => {
-                switch (tagName.toLowerCase()) {
-                    case 'img':
-                    case 'script':
-                        addLocalUrlSetter('src', elem, context);
-                        break;
-                    case 'link':
-                        addLocalUrlSetter('href', elem, context);
-                        break;
-                }
-                return elem;
-            };
-
-            frameDoc.createElement = tagName => {
-                const elem = createFrameElem(tagName);
-                return patchElem(tagName, elem);
-            };
-
-            frameDoc.createElementNS = (nameSpace, tagName) => {
-                const elem = createFrameElemNS(nameSpace, tagName);
-                return patchElem(tagName, elem);
-            };
         }
 
         function patchIframeWebSocket(iframe) {
@@ -322,7 +538,7 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                     const patchedWorkerPromise = (async () => {
                         const response = await fetch(url);
                         const code = await response.text();
-                        let worker = makeWorkerFromString(
+                        const worker = makeWorkerFromString(
                             `
 fetchCallbacks = {};
 fetch=async (resource, init)=>{
@@ -363,12 +579,12 @@ ${code}`
                     super(url, options);
                     return new Proxy(this, {
                         get(target, propKey, receiver) {
-                            var propValue = target[propKey];
+                            const propValue = target[propKey];
                             if (typeof propValue != 'function') {
                                 return propValue;
                             } else {
                                 return async function (...args) {
-                                    let patchedWorker = await patchedWorkerPromise;
+                                    const patchedWorker = await patchedWorkerPromise;
                                     return patchedWorker[propKey](...args);
                                 };
                             }
@@ -382,35 +598,47 @@ ${code}`
             iframe.contentWindow.Worker = makePatchedWorker(iframe, contextUrl);
         }
 
-        function patchIframeXMLHttpRequest(iframe, contextUrl) {
-            const base = (href, init?: RequestInit) => {
-                return fetchUrlContent(mkUrl(contextUrl, href), init);
+        function patchIframeXMLHttpRequest(iframe: HTMLIFrameElement, contextUrl) {
+            const base = (requestInfo: RequestInfo, init?: RequestInit) => {
+                return fetchUrlContent(
+                    typeof requestInfo == 'string'
+                        ? mkUrl(contextUrl, requestInfo).href
+                        : { ...requestInfo, url: mkUrl(contextUrl, requestInfo.url).href },
+                    init
+                );
             };
             let f = base;
             if (props.fetchProxy) {
-                f = (href, init?: RequestInit) => {
-                    return props.fetchProxy({ href, init, contextUrl, base });
+                f = (requestInfo: RequestInfo, init?: RequestInit) => {
+                    return props.fetchProxy({ requestInfo, init, contextUrl, base });
                 };
             }
             const FXHR = createXMLHttpRequest();
 
             FXHR.addHandler({
                 url: /.*/,
-                status: 200,
-                statusText: 'OK',
-                response: async function (request, url, data) {
+                headers: async function (request, url, data) {
                     const result = await f(url, {
                         method: request.method,
-                        ...(data?{body:data}:{})
+                        ...(data ? { body: data } : {})
                     });
+                    request._tmp = request._tmp || {}
                     if (request.responseType == 'arraybuffer') {
-                        return await result.arrayBuffer();
+                        request._tmp.response = await result.arrayBuffer();
                     } else {
-                        return await result.text();
+                        request._tmp.response =  await result.text();
                     }
+                    return Object.fromEntries(result.headers.entries());
+                },
+                status: 200,
+                statusText: 'OK',
+
+                response: async function (request, url, data) {
+                    return request?._tmp?.response;
                 }
             });
-            iframe.contentWindow.XMLHttpRequest = FXHR;
+
+            (iframe.contentWindow as any).XMLHttpRequest = FXHR;
         }
 
         async function patchCustomDom(customDom) {
@@ -426,7 +654,7 @@ ${code}`
                 (iframe.getAttribute('srcDoc') && iframe.getAttribute('srcDoc') != patchedElementSrcDocs.get(iframe))
             ) {
                 patchedElements.add(iframe);
-                let src = iframe.getAttribute('src') || iframe.getAttribute('patched-src');
+                const src = iframe.getAttribute('src') || iframe.getAttribute('patched-src');
                 await setIframeSrc(src);
                 async function setIframeSrc(src) {
                     let newSrc;
@@ -451,7 +679,8 @@ ${code}`
                     }
                     const { html, context } = await patchHtmlCode(content, src);
 
-                    patchIframeCreateEl(iframe, context);
+                    patchIframeTags(iframe, context);
+                    patchIframeEventListeners(iframe, context);
                     patchIframeClasses(iframe);
                     patchIframePostMessage(iframe);
                     patchIframeFetch(iframe, context);

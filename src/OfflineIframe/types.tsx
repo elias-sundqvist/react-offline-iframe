@@ -7,11 +7,14 @@ export type LocalIFrameProps = {
     src: string;
     proxy: (url: string) => string;
     fetchProxy: (args: {
-        href: string;
+        requestInfo: RequestInfo;
         init?: RequestInit;
         contextUrl: string;
-        base: (href: string, init?: RequestInit) => Promise<Response>;
+        base: (href: RequestInfo, init?: RequestInit) => Promise<Response>;
     }) => Promise<Response>;
     htmlPostProcessFunction?: (html: string) => string;
+    postMessagePatchStrategy?: null | 'top' | 'target' | ((iframe: HTMLIFrameElement) => void);
+    tagPatchStrategy?: null | 'createEl' | 'prototype' | ((iframe: HTMLIFrameElement, context: string) => void);
+    onMessagePatchStrategy?: null | 'patchedOriginClone' | ((iframe: HTMLIFrameElement, context: string) => void);
     outerIframeProps?: any;
 };
