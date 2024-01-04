@@ -8,6 +8,7 @@ import { mkUrl } from './utils';
 type FetchType = typeof fetch;
 
 export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
+    // eslint-disable-next-line react/display-name
     (props: LocalIFrameProps) => {
         const fetchUrlContent = (url: RequestInfo, init?: RequestInit) => fetch(url, init);
         let mockServers = [];
@@ -16,6 +17,7 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             mockServers.push(mockServer);
             return mockServer;
         });
+        console.log("useRef")
         const frame = useRef<HTMLIFrameElement>(null);
         const patchedElements = new WeakSet();
         const patchedElementSrcDocs = new WeakMap();
@@ -245,11 +247,11 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                 // Evaluating this code from the context of the iframe window
                 // ensures that the Message event gets the correct source attribute.
                 return win.eval(`
-                    const _postMessage = window.postMessage;
-                    window.postMessage = function(message, targetOrigin, transfer) {
-                        return _postMessage.apply(this, [message, "*", transfer]);
-                    }
-                `);
+                            const _postMessage = window.postMessage;
+                            window.postMessage = function(message, targetOrigin, transfer) {
+                                return _postMessage.apply(this, [message, "*", transfer]);
+                            }
+                        `);
             }
 
             if (props.postMessagePatchStrategy == 'top') {
@@ -526,54 +528,48 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
         function patchIframeWebSocket(iframe) {
             iframe.contentWindow.WebSocket = WebSocket;
         }
-
         function makeWorkerFromString(str) {
             return new Worker('data:application/javascript,' + encodeURIComponent(str));
         }
-
         function makePatchedWorker(iframe, contextUrl) {
             return class PatchedWorker extends Worker {
-                constructor(scriptURL: URL, options?: WorkerOptions) {
+                constructor(scriptURL, options) {
                     const url = getResourceUrl(scriptURL, contextUrl);
                     const patchedWorkerPromise = (async () => {
                         const response = await fetch(url);
                         const code = await response.text();
-                        const worker = makeWorkerFromString(
-                            `
-fetchCallbacks = {};
-fetch=async (resource, init)=>{
-    const id = \`\${Math.random()}\`.substr(2);
-    const promise = new Promise(res=>{fetchCallbacks[id]=res;});
-    self.postMessage({isFetch:true, id, resource, init});
-    return await promise;
-};
-self.addEventListener("message", function(event) {
-    if(event.data.isFetchResult) {
-        fetchCallbacks[event.data.id](new Response(event.data.blob, event.data.init));
-        fetchCallbacks[event.data.id] = null;
-    }
-});
-${code}`
-                        );
+                        const worker = makeWorkerFromString(`
+    fetchCallbacks = {};
+    fetch=async (resource, init)=>{
+        const id = \`\${Math.random()}\`.substr(2);
+        const promise = new Promise(res=>{fetchCallbacks[id]=res;});
+        self.postMessage({isFetch:true, id, resource, init});
+        return await promise;
+    };
+    self.addEventListener("message", function(event) {
+        if(event.data.isFetchResult) {
+            fetchCallbacks[event.data.id](new Response(event.data.blob, event.data.init));
+            fetchCallbacks[event.data.id] = null;
+        }
+    });
+    ${code}`);
                         worker.addEventListener('message', async function (event) {
-                            if (event.data.isFetch) {
-                                const response = await (iframe.contentWindow.fetch as FetchType)(
-                                    event.data.resource,
-                                    event.data.init
-                                );
-                                const blob = await response.blob();
-                                worker.postMessage({
-                                    isFetchResult: true,
-                                    id: event.data.id,
-                                    blob,
-                                    init: {
-                                        status: response.status,
-                                        statusText: response.statusText,
-                                        headers: response.headers
-                                    }
-                                });
+                                if (event.data.isFetch) {
+                                    const response = await iframe.contentWindow.fetch(event.data.resource, event.data.init);
+                                    const blob = await response.blob();
+                                    worker.postMessage({
+                                        isFetchResult: true,
+                                        id: event.data.id,
+                                        blob,
+                                        init: {
+                                            status: response.status,
+                                            statusText: response.statusText,
+                                            headers: response.headers
+                                        }
+                                    });
                             }
                         });
+                        
                         return worker;
                     })();
                     super(url, options);
@@ -582,7 +578,8 @@ ${code}`
                             const propValue = target[propKey];
                             if (typeof propValue != 'function') {
                                 return propValue;
-                            } else {
+                            }
+                            else {
                                 return async function (...args) {
                                     const patchedWorker = await patchedWorkerPromise;
                                     return patchedWorker[propKey](...args);
@@ -622,11 +619,11 @@ ${code}`
                         method: request.method,
                         ...(data ? { body: data } : {})
                     });
-                    request._tmp = request._tmp || {}
+                    request._tmp = request._tmp || {};
                     if (request.responseType == 'arraybuffer') {
                         request._tmp.response = await result.arrayBuffer();
                     } else {
-                        request._tmp.response =  await result.text();
+                        request._tmp.response = await result.text();
                     }
                     return Object.fromEntries(result.headers.entries());
                 },

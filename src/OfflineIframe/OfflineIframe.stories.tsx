@@ -30,6 +30,7 @@ const makeOnChange = (setFolder, setResourceUrls) => async x => {
 };
 
 const proxiedHosts = new Set([
+    'play.tailwindcss.com',
     'www.desmos.com',
     'www.brainfacts.org',
     'agentcooper.github.io',
@@ -75,7 +76,12 @@ const makeGetResourceUrl = resourceUrls => (url: string) => {
     if (proxiedHosts.has(proxiedUrl.host)) {
         const pathName = `${proxiedUrl.host}${proxiedUrl.pathname}`.replace(/^\//, '').replace(/\/*$/, '');
         const res =
-            resourceUrls.get(pathName) || resourceUrls.get(`${pathName}.html`) || resourceUrls.get(`${pathName}.json`);
+            resourceUrls.get(pathName) ||
+            resourceUrls.get(`${pathName}.html`) ||
+            resourceUrls.get(`${pathName}.json`) ||
+            resourceUrls.get(decodeURI(pathName)) ||
+            resourceUrls.get(`${decodeURI(pathName)}.html`) ||
+            resourceUrls.get(`${decodeURI(pathName)}.json`);
         if (res) return res;
         console.error('file not found', { url, pathName });
     }
@@ -194,6 +200,34 @@ export const AnnotateTv = () => {
     const [folder, setFolder] = useState<jszip>();
     const [resourceUrls, setResourceUrls] = useState<Map<string, string>>();
     const [address, setAddress] = useState<string>('https://annotate.tv/demo.html');
+    const fetchUrlContent = makeFetchUrlContent(folder);
+    return (
+        <div>
+            <input type="file" id="myFile" name="filename" onChange={makeOnChange(setFolder, setResourceUrls)} />
+            <br />
+            <input value={address} onChange={ev => setAddress(ev.target.value)} style={{ width: '100%' }} />
+            <br />
+            {resourceUrls ? (
+                <OfflineIframe
+                    address={address}
+                    fetch={url => {
+                        return fetchUrlContent(url);
+                    }}
+                    webSocketSetup={() => {}}
+                    getUrl={makeGetResourceUrl(resourceUrls)}
+                    outerIframeProps={{ style: { height: '900px' } }}
+                />
+            ) : (
+                <></>
+            )}
+        </div>
+    );
+};
+
+export const TailWindCssPlayground = () => {
+    const [folder, setFolder] = useState<jszip>();
+    const [resourceUrls, setResourceUrls] = useState<Map<string, string>>();
+    const [address, setAddress] = useState<string>('https://play.tailwindcss.com/WKCIi7Xcbl.html');
     const fetchUrlContent = makeFetchUrlContent(folder);
     return (
         <div>

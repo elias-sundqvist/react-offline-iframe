@@ -78,7 +78,7 @@ export default function createXMLHttpRequest() {
         url: '',
 
         addEventListener: function (ev, f) {
-            return this[`on${ev}`] = f;
+            return (this[`on${ev}`] = f);
         },
 
         open: function (method, url, async, user, password) {
@@ -245,7 +245,9 @@ export default function createXMLHttpRequest() {
         },
 
         getAllResponseHeaders: function () {
-            return Object.entries(this.responseHeaders).map(x=>x.join(": ")).join("\n");
+            return Object.entries(this.responseHeaders)
+                .map(x => x.join(': '))
+                .join('\n');
         },
 
         overrideMimeType: function (mimeType) {
