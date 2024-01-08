@@ -12,6 +12,7 @@ export type LocalIFrameProps = {
         contextUrl: string;
         base: (href: RequestInfo, init?: RequestInit) => Promise<Response>;
     }) => Promise<Response>;
+    onAttributeSet?: (el: HTMLElement, attr: string, value: string, patchedValue: string) => void;
     htmlPostProcessFunction?: (html: string) => string;
     postMessagePatchStrategy?: null | 'top' | 'target' | ((iframe: HTMLIFrameElement) => void);
     tagPatchStrategy?: null | 'createEl' | 'prototype' | ((iframe: HTMLIFrameElement, context: string) => void);

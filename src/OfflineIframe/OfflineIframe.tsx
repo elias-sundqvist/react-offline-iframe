@@ -33,6 +33,7 @@ const OfflineIframe = ({
             }}
             onIframePatch={async () => {}}
             tagPatchStrategy={'prototype'}
+            onAttributeSet={(el, attr, value) => {}}
             postMessagePatchStrategy={'target'}
             onMessagePatchStrategy={null}
             {...props}

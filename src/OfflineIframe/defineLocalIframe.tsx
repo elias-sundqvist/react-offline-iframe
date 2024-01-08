@@ -17,7 +17,6 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
             mockServers.push(mockServer);
             return mockServer;
         });
-        console.log("useRef")
         const frame = useRef<HTMLIFrameElement>(null);
         const patchedElements = new WeakSet();
         const patchedElementSrcDocs = new WeakMap();
@@ -426,7 +425,9 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                     prototype[SetAttributeOriginal] = prototype.setAttribute;
                     prototype.setAttribute = function (qualifiedName, value) {
                         if (properties.has(qualifiedName.toLowerCase())) {
-                            this[SetAttributeOriginal](qualifiedName, getResourceUrl(value, context));
+                            const patchedValue = getResourceUrl(value, context);
+                            props.onAttributeSet?.(this, qualifiedName, value, patchedValue);
+                            this[SetAttributeOriginal](qualifiedName, patchedValue);
                             this[SetAttributeOriginal](`patched-${qualifiedName}`, value);
                         } else {
                             this[SetAttributeOriginal](qualifiedName, value);
@@ -437,7 +438,9 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                     prototype[SetAttributeNSOriginal] = prototype.setAttributeNS;
                     prototype.setAttributeNS = function (namespace, qualifiedName, value) {
                         if (properties.has(qualifiedName.toLowerCase())) {
-                            this[SetAttributeNSOriginal](namespace, qualifiedName, getResourceUrl(value, context));
+                            const patchedValue = getResourceUrl(value, context);
+                            props.onAttributeSet?.(this, qualifiedName, value, patchedValue);
+                            this[SetAttributeNSOriginal](namespace, qualifiedName, patchedValue);
                             this[SetAttributeNSOriginal](namespace, `patched-${qualifiedName}`, value);
                         } else {
                             this[SetAttributeNSOriginal](namespace, qualifiedName, value);
@@ -448,10 +451,12 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                     prototype[SetAttributeNodeOriginal] = prototype.setAttributeNode;
                     prototype.setAttributeNode = function (attr) {
                         if (properties.has(attr.name.toLowerCase())) {
+                            const patchedValue = getResourceUrl(attr.value, context);
+                            props.onAttributeSet?.(this, attr.name, attr.value, patchedValue);
                             const patchedAttr = this.ownerDocument.createAttribute(`patched-${attr.name}`);
                             patchedAttr.value = attr.value;
                             const newAttr = this.ownerDocument.createAttribute(attr.name);
-                            newAttr.value = getResourceUrl(attr.value, context);
+                            newAttr.value = patchedValue;
                             this[SetAttributeNodeOriginal](patchedAttr);
                             return this[SetAttributeNodeOriginal](newAttr);
                         } else {
@@ -463,13 +468,15 @@ export default ({ fetch, getUrl }: { fetch: FetchType; getUrl }) =>
                     prototype[SetAttributeNodeNSOriginal] = prototype.setAttributeNodeNS;
                     prototype.setAttributeNodeNS = function (attr) {
                         if (properties.has(attr.name.toLowerCase())) {
+                            const patchedValue = getResourceUrl(attr.value, context);
+                            props.onAttributeSet?.(this, attr.name, attr.value, patchedValue);
                             const patchedAttr = this.ownerDocument.createAttributeNS(
                                 attr.namespaceURI,
                                 `patched-${attr.name}`
                             );
                             patchedAttr.value = attr.value;
                             const newAttr = this.ownerDocument.createAttributeNS(attr.namespaceURI, attr.name);
-                            newAttr.value = getResourceUrl(attr.value, context);
+                            newAttr.value = patchedValue;
                             this[SetAttributeNodeNSOriginal](patchedAttr);
                             return this[SetAttributeNodeNSOriginal](newAttr);
                         } else {
